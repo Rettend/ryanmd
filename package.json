@@ -1,20 +1,20 @@
 {
   "name": "ryanmd",
-  "version": "1.0.0",
-  "description": "Archive of Ryan Carniato's HackMD notes",
-  "private": true,
   "type": "module",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Archive of Ryan Carniato's HackMD notes",
   "scripts": {
     "fetch": "bun scripts/fetch-notes.ts",
     "lint": "eslint . --fix"
   },
-  "devDependencies": {
-    "typescript": "^5.3.0",
-    "@types/bun": "latest",
-    "@antfu/eslint-config": "^6.7.3",
-    "eslint": "^9.39.2"
-  },
   "dependencies": {
     "puppeteer-core": "^24.34.0"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "^6.7.3",
+    "@types/bun": "latest",
+    "eslint": "^9.39.2",
+    "typescript": "^5.3.0"
   }
 }
