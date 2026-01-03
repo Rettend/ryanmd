@@ -35,9 +35,9 @@ async function parseArticle(
         const lastmodMatch = frontmatter.match(/^lastmod:\s*(\S.*)$/m)
 
         if (titleMatch)
-          title = titleMatch[1].trim()
+          title = titleMatch[1]?.trim() ?? title
         if (lastmodMatch)
-          lastmod = lastmodMatch[1].trim()
+          lastmod = lastmodMatch[1]?.trim() ?? lastmod
       }
     }
 
@@ -158,7 +158,6 @@ async function main() {
 
   console.log(`\n✅ Generated INDEX.md`)
 
-  // Summary
   console.log('\n📊 Summary:')
   let total = 0
   for (const [source, articles] of articlesBySource) {

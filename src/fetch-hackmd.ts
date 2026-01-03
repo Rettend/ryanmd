@@ -22,21 +22,17 @@ function findChrome(): string {
     `${process.env['PROGRAMFILES(X86)']}\\Google\\Chrome\\Application\\chrome.exe`,
     `${process.env.PROGRAMFILES}\\Google\\Chrome\\Application\\chrome.exe`,
     `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`,
-    // Edge as fallback
     `${process.env['PROGRAMFILES(X86)']}\\Microsoft\\Edge\\Application\\msedge.exe`,
     `${process.env.PROGRAMFILES}\\Microsoft\\Edge\\Application\\msedge.exe`,
   ]
 
   for (const p of paths) {
-    try {
-      if (fs.existsSync(p)) {
-        return p
-      }
+    if (fs.existsSync(p)) {
+      return p
     }
-    catch { }
   }
 
-  throw new Error('Could not find Chrome or Edge. Please install Chrome or specify the path manually.')
+  throw new Error('Could not find Chrome or Edge.')
 }
 
 /**
@@ -63,9 +59,10 @@ function parseDate(dateStr: string): { year: string, isoDate: string } {
       isoDate: now.toISOString().split('T')[0] || '',
     }
   }
-  const year = date.getFullYear().toString()
-  const isoDate = date.toISOString().split('T')[0] || ''
-  return { year, isoDate }
+  return {
+    year: date.getFullYear().toString(),
+    isoDate: date.toISOString().split('T')[0] || '',
+  }
 }
 
 /**
@@ -73,7 +70,7 @@ function parseDate(dateStr: string): { year: string, isoDate: string } {
  */
 async function extractNotesFromPage(page: any): Promise<NoteInfo[]> {
   return page.evaluate((profileUrl: string) => {
-    const notes: { slug: string, title: string, lastmod: string, url: string }[] = []
+    const notes: NoteInfo[] = []
     const seenSlugs = new Set<string>()
 
     // Find all links that point to notes (not edit links)
@@ -97,12 +94,10 @@ async function extractNotesFromPage(page: any): Promise<NoteInfo[]> {
       const title = anchor.textContent?.trim() || slug
 
       // Find the parent card/row to get the date
-      // Walk up to find a containing element with date info
       let container = anchor.parentElement
       let dateText = ''
       for (let i = 0; i < 5 && container; i++) {
         const text = container.textContent || ''
-        // Look for date patterns like "Jul 24, 2025" or "Dec 3, 2024"
         const dateMatch = text.match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}/i)
         if (dateMatch) {
           dateText = dateMatch[0]
@@ -138,7 +133,7 @@ async function downloadMarkdown(slug: string): Promise<string> {
 /**
  * Create frontmatter and combine with markdown content
  */
-function createFileContent(title: string, lastmod: string, markdown: string): string {
+function createFileContent(title: string, lastmod: string, sourceUrl: string, markdown: string): string {
   const hasFrontmatter = markdown.trimStart().startsWith('---')
 
   if (hasFrontmatter) {
@@ -157,31 +152,31 @@ function createFileContent(title: string, lastmod: string, markdown: string): st
       if (!hasLastmod && lastmod) {
         newFrontmatter = `${newFrontmatter}\nlastmod: ${lastmod}`
       }
+      // Always add source at the end
+      newFrontmatter = `${newFrontmatter}\nsource: ${sourceUrl}`
 
       return `---\n${newFrontmatter}\n---${rest}`
     }
   }
 
-  const frontmatter = `---
+  return `---
 title: ${title}
 lastmod: ${lastmod}
+source: ${sourceUrl}
 ---
 
-`
-  return frontmatter + markdown
+${markdown}`
 }
 
 async function main() {
   console.log('🚀 Starting HackMD scraper...\n')
 
-  // Find Chrome/Edge
   const executablePath = findChrome()
   console.log(`🌐 Using browser: ${executablePath}\n`)
 
-  // Launch browser using system Chrome/Edge
   const browser = await puppeteer.launch({
     executablePath,
-    headless: false, // Show browser so you can see progress
+    headless: false,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1400,900'],
     defaultViewport: { width: 1280, height: 800 },
   })
@@ -195,80 +190,22 @@ async function main() {
   console.log('⏳ Waiting for content to render...')
   await new Promise(r => setTimeout(r, 3000))
 
-  // Dismiss any login popup/overlay by clicking outside or pressing Escape
-  console.log('🔓 Dismissing any popups...')
-  try {
-    await page.keyboard.press('Escape')
-    await new Promise(r => setTimeout(r, 500))
-    // Also try to click outside any modal
-    await page.evaluate(() => {
-      // Click on any overlay/backdrop to dismiss
-      const overlay = document.querySelector('[class*="overlay"], [class*="backdrop"], [class*="modal-bg"]')
-      if (overlay)
-        (overlay as HTMLElement).click()
-      // Also remove any fixed/modal elements
-      document.querySelectorAll('[class*="modal"], [class*="popup"], [class*="dialog"]').forEach((el) => {
-        if (el.classList.contains('modal') || el.classList.contains('popup')) {
-          (el as HTMLElement).style.display = 'none'
-        }
-      })
-    })
-  }
-  catch {
-    // Ignore if no popup
-  }
+  // Dismiss any login popup by pressing Escape
+  await page.keyboard.press('Escape')
   await new Promise(r => setTimeout(r, 1000))
 
-  // Debug: What's actually on the page?
-  const debug = await page.evaluate(() => {
-    const allElements = document.querySelectorAll('*')
-    const classes = new Set<string>()
-    allElements.forEach((el) => {
-      if (el.className && typeof el.className === 'string') {
-        el.className.split(' ').forEach((c) => {
-          if (c.includes('card') || c.includes('note') || c.includes('overview') || c.includes('list')) {
-            classes.add(c)
-          }
-        })
-      }
-    })
-
-    // Also look for any links to notes
-    const noteLinks = document.querySelectorAll('a[href*="/@0u1u3zEAQAO0iYWVAStEvw/"]')
-    const linkInfo = Array.from(noteLinks).slice(0, 5).map(a => ({
-      href: a.getAttribute('href'),
-      text: a.textContent?.substring(0, 50),
-      parent: a.parentElement?.className,
-    }))
-
-    return {
-      classes: [...classes].join(', '),
-      linkCount: noteLinks.length,
-      linkInfo,
-      bodyText: document.body.textContent?.substring(0, 300),
-    }
-  })
-
-  console.log(`📋 Debug - Relevant classes: ${debug.classes}`)
-  console.log(`📋 Debug - Note links found: ${debug.linkCount}`)
-  console.log(`📋 Debug - Sample links:`, JSON.stringify(debug.linkInfo, null, 2))
-  console.log(`📋 Debug - Body preview: ${debug.bodyText.substring(0, 150)}...`)
-
   const allNotes: NoteInfo[] = []
-  const seenSlugs = new Set<string>() // For deduplication
+  const seenSlugs = new Set<string>()
 
-  // Find the pagination container - look for a group of numbered buttons/links close together
+  // Detect pagination by looking for consecutive numbered buttons/links
   const pageCount = await page.evaluate(() => {
-    // Try to find a container with multiple numbered elements (pagination pattern)
-    // Look at the bottom of the page for pagination
-    const candidates: HTMLElement[] = []
+    const candidates: string[] = []
     document.querySelectorAll('button, a').forEach((el) => {
       const text = el.textContent?.trim() || ''
-      // Page numbers should just be digits, and pagination usually has 1-10
       if (/^\d+$/.test(text)) {
         const num = Number.parseInt(text)
         if (num >= 1 && num <= 10) {
-          candidates.push(el as HTMLElement)
+          candidates.push(text)
         }
       }
     })
@@ -276,12 +213,10 @@ async function main() {
     // Find consecutive numbers (1, 2, 3...) - this is the pagination
     let maxPage = 1
     for (let i = 1; i <= 10; i++) {
-      const hasPage = candidates.some(el => el.textContent?.trim() === String(i))
-      if (hasPage)
+      if (candidates.includes(String(i)))
         maxPage = i
-      else break // Stop at first gap
+      else break
     }
-
     return maxPage
   })
 
@@ -292,66 +227,36 @@ async function main() {
     console.log(`📖 Extracting page ${pageNum}/${pageCount}...`)
 
     if (pageNum > 1) {
-      // First scroll to the bottom of the page to ensure pagination is visible
-      await page.evaluate(() => {
-        window.scrollTo(0, document.body.scrollHeight)
-      })
+      // Scroll to bottom to ensure pagination is visible
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
       await new Promise(r => setTimeout(r, 500))
 
-      // Find and click the pagination button using Puppeteer's click (more reliable)
-      const clicked = await page.evaluate((num: number) => {
-        // Find all buttons/links with the page number
-        const allClickable = document.querySelectorAll('button, a')
-        let targetElement: HTMLElement | null = null
-
-        for (const el of Array.from(allClickable)) {
-          const text = el.textContent?.trim() || ''
-          if (text === String(num)) {
+      // Click the pagination link
+      await page.evaluate((num: number) => {
+        for (const el of Array.from(document.querySelectorAll('a'))) {
+          if (el.textContent?.trim() === String(num)) {
             const rect = el.getBoundingClientRect()
-            // Pagination buttons should be at the bottom and visible
-            // Also check if the element is in a pagination-like container
-            const parent = el.parentElement
-            const isInPagination = parent && (
-              parent.children.length > 3 // Multiple buttons together
-              || parent.className.includes('pagination')
-              || parent.className.includes('page')
-            )
-
-            if (rect.top > 300 || isInPagination) {
-              // Scroll into view and click
+            // Pagination links are typically at the bottom
+            if (rect.top > 300) {
               el.scrollIntoView({ behavior: 'instant', block: 'center' })
-              targetElement = el as HTMLElement
-              break
+              el.click()
+              return
             }
           }
         }
-
-        if (targetElement) {
-          targetElement.click()
-          return true
-        }
-        return false
       }, pageNum)
-
-      if (!clicked) {
-        console.log(`   ⚠️ Could not find button for page ${pageNum}, trying keyboard navigation...`)
-        // Try using keyboard navigation as fallback (Tab + Enter)
-        continue
-      }
 
       // Wait for content to change
       await new Promise(r => setTimeout(r, 2500))
 
-      // Scroll back to top to see new content
-      await page.evaluate(() => {
-        window.scrollTo(0, 0)
-      })
+      // Scroll back to top
+      await page.evaluate(() => window.scrollTo(0, 0))
       await new Promise(r => setTimeout(r, 500))
     }
 
     const notes = await extractNotesFromPage(page)
 
-    // Deduplicate - only add notes we haven't seen
+    // Deduplicate
     let newNotes = 0
     for (const note of notes) {
       if (!seenSlugs.has(note.slug)) {
@@ -377,13 +282,14 @@ async function main() {
       const { year, isoDate } = parseDate(note.lastmod)
       const slug = slugify(note.title)
       const yearDir = join(OUTPUT_DIR, 'hackmd', year)
-      const filePath = join(yearDir, `${slug}.md`)
 
       await mkdir(yearDir, { recursive: true })
 
+      const sourceUrl = `${PROFILE_URL}/${note.slug}`
       const markdown = await downloadMarkdown(note.slug)
-      const content = createFileContent(note.title, isoDate, markdown)
+      const content = createFileContent(note.title, isoDate, sourceUrl, markdown)
 
+      const filePath = join(yearDir, `${slug}.md`)
       await writeFile(filePath, content, 'utf-8')
 
       console.log(`✅ ${year}/${slug}.md`)

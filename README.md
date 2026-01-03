@@ -1,6 +1,6 @@
-# Ryan Carniato's HackMD Archive
+# RyanMD
 
-This is a personal archive of [Ryan Carniato's](https://twitter.com/RyanCarniato) public notes from [his HackMD](https://hackmd.io/@0u1u3zEAQAO0iYWVAStEvw).
+This is an archive of [Ryan Carniato's](https://twitter.com/RyanCarniato) public notes from [HackMD](https://hackmd.io/@0u1u3zEAQAO0iYWVAStEvw), [Dev.to](https://dev.to/ryansolid), and [Medium](https://ryansolid.medium.com).
 
 [Overview](INDEX.md)
 
