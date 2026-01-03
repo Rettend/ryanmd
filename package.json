@@ -1,0 +1,20 @@
+{
+  "name": "ryanmd",
+  "version": "1.0.0",
+  "description": "Archive of Ryan Carniato's HackMD notes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fetch": "bun scripts/fetch-notes.ts"
+  },
+  "devDependencies": {
+    "playwright": "^1.40.0",
+    "typescript": "^5.3.0",
+    "@types/bun": "latest",
+    "@antfu/eslint-config": "^6.7.3",
+    "eslint": "^9.39.2"
+  },
+  "dependencies": {
+    "puppeteer-core": "^24.34.0"
+  }
+}
