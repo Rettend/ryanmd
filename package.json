@@ -3,9 +3,12 @@
   "type": "module",
   "version": "1.0.0",
   "private": true,
-  "description": "Archive of Ryan Carniato's HackMD notes",
+  "description": "Archive of Ryan Carniato's public articles from HackMD, dev.to, and Medium",
   "scripts": {
-    "fetch": "bun scripts/fetch-notes.ts",
+    "hackmd": "bun src/fetch-hackmd.ts",
+    "medium": "bun src/fetch-medium.ts",
+    "devto": "bun src/fetch-devto.ts",
+    "index": "bun src/generate-index.ts",
     "lint": "eslint . --fix"
   },
   "dependencies": {
@@ -14,6 +17,7 @@
   "devDependencies": {
     "@antfu/eslint-config": "^6.7.3",
     "@types/bun": "latest",
+    "@typescript/native-preview": "^7.0.0-dev.20260103.1",
     "eslint": "^9.39.2",
     "typescript": "^5.3.0"
   }
