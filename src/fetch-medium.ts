@@ -9,22 +9,16 @@ const OUTPUT_DIR = process.cwd()
 
 function findChrome(): string {
   const paths = [
-    `${process.env['PROGRAMFILES(X86)']
-    }\\Google\\Chrome\\Application\\chrome.exe`,
+    `${process.env['PROGRAMFILES(X86)']}\\Google\\Chrome\\Application\\chrome.exe`,
     `${process.env.PROGRAMFILES}\\Google\\Chrome\\Application\\chrome.exe`,
     `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`,
-    `${process.env['PROGRAMFILES(X86)']
-    }\\Microsoft\\Edge\\Application\\msedge.exe`,
+    `${process.env['PROGRAMFILES(X86)']}\\Microsoft\\Edge\\Application\\msedge.exe`,
     `${process.env.PROGRAMFILES}\\Microsoft\\Edge\\Application\\msedge.exe`,
   ]
 
   for (const p of paths) {
-    try {
-      if (fs.existsSync(p)) {
-        return p
-      }
-    }
-    catch {}
+    if (fs.existsSync(p))
+      return p
   }
 
   throw new Error('Could not find Chrome or Edge.')
@@ -69,11 +63,8 @@ function htmlToMarkdown(html: string): string {
   md = md.replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n')
   md = md.replace(/<\/?[uo]l[^>]*>/gi, '\n')
 
-  // Images - keep the src
-  md = md.replace(
-    /<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[^>]*>/gi,
-    '![$2]($1)',
-  )
+  // Images
+  md = md.replace(/<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[^>]*>/gi, '![$2]($1)')
   md = md.replace(/<img[^>]*src="([^"]*)"[^>]*>/gi, '![]($1)')
 
   // Figures
@@ -98,7 +89,7 @@ function htmlToMarkdown(html: string): string {
 }
 
 async function main() {
-  console.log('🚀 Starting Medium scraper with Puppeteer...\n')
+  console.log('🚀 Starting Medium scraper...\n')
 
   const executablePath = findChrome()
   console.log(`🌐 Using browser: ${executablePath}\n`)
@@ -117,23 +108,20 @@ async function main() {
 
   const page = await browser.newPage()
 
-  // Set a realistic user agent and remove webdriver flag
   await page.setUserAgent(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   )
 
-  // Hide automation indicators
   await page.evaluateOnNewDocument(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
   })
 
-  // Use the archive page which lists all articles
-  const archiveUrl = `https://${USERNAME}.medium.com/`
-  console.log(`📄 Navigating to ${archiveUrl}...`)
-  await page.goto(archiveUrl, { waitUntil: 'networkidle2', timeout: 60000 })
+  const profileUrl = `https://${USERNAME}.medium.com/`
+  console.log(`📄 Navigating to ${profileUrl}...`)
+  await page.goto(profileUrl, { waitUntil: 'networkidle2', timeout: 60000 })
   await new Promise(r => setTimeout(r, 4000))
 
-  // Scroll down to load all articles (infinite scroll)
+  // Scroll to load all articles (infinite scroll)
   console.log('⏳ Scrolling to load all articles...')
   let previousHeight = 0
   let scrollAttempts = 0
@@ -143,7 +131,6 @@ async function main() {
     const currentHeight = await page.evaluate(() => document.body.scrollHeight)
 
     if (currentHeight === previousHeight) {
-      // Try one more time after a longer wait
       await new Promise(r => setTimeout(r, 2000))
       const finalHeight = await page.evaluate(() => document.body.scrollHeight)
       if (finalHeight === currentHeight) {
@@ -159,112 +146,35 @@ async function main() {
     console.log(`   Scroll ${scrollAttempts}...`)
   }
 
-  // Scroll back to top
   await page.evaluate(() => window.scrollTo(0, 0))
   await new Promise(r => setTimeout(r, 1000))
 
-  // Debug: What's on the page?
-  const debug = await page.evaluate(() => {
-    const allLinks = document.querySelectorAll('a')
-
-    // Get unique href patterns
-    const hrefs = Array.from(allLinks).map(a => a.href).filter(h => h && h.length > 5)
-    const uniquePatterns = [...new Set(hrefs)].slice(0, 30)
-
-    // Look for links with long text (likely article titles)
-    const linksByText = Array.from(allLinks)
-      .filter(a => (a.textContent?.trim().length || 0) > 20)
-      .slice(0, 10)
-      .map(a => ({
-        href: a.href,
-        text: a.textContent?.trim().substring(0, 60),
-      }))
-
-    return {
-      totalLinks: allLinks.length,
-      uniquePatterns,
-      linksByText,
-      bodyPreview: document.body.textContent?.substring(0, 500) || '',
-    }
-  })
-
-  console.log('\n📋 Debug info:')
-  console.log(`   Total links: ${debug.totalLinks}`)
-  console.log(`   Unique link patterns:`, debug.uniquePatterns.slice(0, 15))
-  console.log(`   Links with long text:`, debug.linksByText)
-  console.log(`   Body preview: ${debug.bodyPreview.substring(0, 200)}...`)
-
-  // Extract article links - use broader selector
-  console.log('\n📋 Extracting article links...')
+  // Extract article links
+  console.log('📋 Extracting article links...')
   const articles = await page.evaluate((username: string) => {
-    // Find all links that look like article URLs
     const allLinks = document.querySelectorAll('a')
     const seen = new Set<string>()
-    const results: { title: string, url: string, date: string }[] = []
+    const results: { title: string, url: string }[] = []
 
     for (const link of Array.from(allLinks)) {
       const href = link.href
 
-      // Match Medium article URLs - pattern: username.medium.com/article-slug-hash
-      // e.g., https://ryansolid.medium.com/components-are-pure-overhead-12358123bc2b
+      // Match Medium article URLs: username.medium.com/article-slug-hash
       const articlePattern = new RegExp(`${username}\\.medium\\.com/[a-z0-9-]+-[a-f0-9]+`, 'i')
-      const isArticleUrl = articlePattern.test(href)
-
-      if (!isArticleUrl)
+      if (!articlePattern.test(href))
         continue
 
-      // Get clean URL
       const cleanUrl = href.split('?')[0]
       if (!cleanUrl || seen.has(cleanUrl))
         continue
       seen.add(cleanUrl)
 
-      // Get title - try various approaches
-      let title = ''
-
-      // Check if link contains an h2 or h3
+      // Get title from heading inside link
       const heading = link.querySelector('h2, h3, h1')
-      if (heading) {
-        title = heading.textContent?.trim() || ''
-      }
-
-      // Or check parent for heading
-      if (!title) {
-        const parent = link.parentElement
-        const parentHeading = parent?.querySelector('h2, h3, h1')
-        title = parentHeading?.textContent?.trim() || ''
-      }
-
-      // Or use link text if it's long enough
-      if (!title) {
-        const linkText = link.textContent?.trim() || ''
-        if (linkText.length > 10 && linkText.length < 200) {
-          title = linkText
-        }
-      }
-
-      // Extract title from URL as fallback
-      if (!title) {
-        const urlParts = cleanUrl.split('/')
-        const lastPart = urlParts[urlParts.length - 1]
-        // Remove the hash at the end (e.g., "title-abc123" -> "title")
-        title = lastPart.replace(/-[a-f0-9]{8,}$/i, '').replace(/-/g, ' ')
-      }
-
-      // Try to find date
-      let date = ''
-      const container = link.closest('div')
-      if (container) {
-        const text = container.textContent || ''
-        const dateMatch = text.match(
-          /(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}/i,
-        )
-        if (dateMatch)
-          date = dateMatch[0]
-      }
+      const title = heading?.textContent?.trim() || ''
 
       if (title && cleanUrl) {
-        results.push({ title, url: cleanUrl, date })
+        results.push({ title, url: cleanUrl })
       }
     }
 
@@ -280,28 +190,24 @@ async function main() {
 
   for (const article of articles) {
     try {
-      // Navigate to article page
       await page.goto(article.url, { waitUntil: 'networkidle2', timeout: 60000 })
       await new Promise(r => setTimeout(r, 2000))
 
-      // Extract content
+      // Extract content from article sections
       const content = await page.evaluate(() => {
-        // Find the article content section
         const articleEl = document.querySelector('article')
         if (!articleEl)
           return ''
 
-        // Get all section content
         const sections = articleEl.querySelectorAll('section')
         let html = ''
         sections.forEach((section) => {
           html += section.innerHTML
         })
-
         return html
       })
 
-      // Get the actual title from the page
+      // Get title from page (more reliable than list)
       const pageTitle = await page.evaluate(() => {
         const h1 = document.querySelector('article h1')
         return h1?.textContent?.trim() || ''
@@ -309,44 +215,31 @@ async function main() {
 
       const title = pageTitle || article.title
 
-      // Parse date
-      let year = 'unknown'
+      // Get date from article page
+      let year = 'undated'
       let isoDate = ''
-      if (article.date) {
+
+      const pageDateText = await page.evaluate(() => {
+        const spans = document.querySelectorAll('article span')
+        for (const span of Array.from(spans)) {
+          const text = span.textContent || ''
+          const match = text.match(
+            /(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}/i,
+          )
+          if (match)
+            return match[0]
+        }
+        return ''
+      })
+
+      if (pageDateText) {
         try {
-          const parsed = new Date(article.date)
+          const parsed = new Date(pageDateText)
           year = parsed.getFullYear().toString()
           isoDate = parsed.toISOString().split('T')[0] || ''
         }
         catch {}
       }
-
-      // If no date found, try to get from page
-      if (!isoDate) {
-        const pageDateText = await page.evaluate(() => {
-          const spans = document.querySelectorAll('article span')
-          for (const span of Array.from(spans)) {
-            const text = span.textContent || ''
-            const match = text.match(
-              /(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}/i,
-            )
-            if (match)
-              return match[0]
-          }
-          return ''
-        })
-        if (pageDateText) {
-          try {
-            const parsed = new Date(pageDateText)
-            year = parsed.getFullYear().toString()
-            isoDate = parsed.toISOString().split('T')[0] || ''
-          }
-          catch {}
-        }
-      }
-
-      if (year === 'unknown')
-        year = 'undated'
 
       const slug = slugify(title)
       const markdown = htmlToMarkdown(content)
@@ -368,7 +261,6 @@ ${markdown}`
       console.log(`✅ medium/${year}/${slug}.md`)
       successCount++
 
-      // Rate limit
       await new Promise(r => setTimeout(r, 500))
     }
     catch (error) {
@@ -378,9 +270,7 @@ ${markdown}`
   }
 
   await browser.close()
-  console.log(
-    `\n🎉 Done! Downloaded ${successCount} articles, ${errorCount} errors.`,
-  )
+  console.log(`\n🎉 Done! Downloaded ${successCount} articles, ${errorCount} errors.`)
 }
 
 main().catch(console.error)
